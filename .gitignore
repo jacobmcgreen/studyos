@@ -1,0 +1,29 @@
+# Build artifacts
+/build
+/cmake-build-*/
+CMakeFiles
+CMakeCache.txt
+Makefile
+cmake_install.cmake
+
+# Qt
+*.moc
+*.qrc
+*.ui
+*.qmlc
+*.qm
+.autogen/
+moc_*.cpp
+ui_*.h
+
+# OS junk
+.DS_Store
+
+# Editor
+.vscode/
+.idea/
+
+# SQLite
+*.db
+*.sqlite
+*.sqlite3
