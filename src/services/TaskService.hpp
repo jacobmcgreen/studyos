@@ -15,6 +15,7 @@ class TaskService {
               const std::string& energy);
   std::vector<Task> listTasks();
   void markDone(int id);
+  void deleteTask(int id);
 
  private:
   Database& db_;

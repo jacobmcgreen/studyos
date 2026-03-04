@@ -30,6 +30,7 @@ class TasksWidget : public QWidget {
   void OnSelectionChanged();
   void NewTask();
   void MarkDone();
+  void DeleteTask();
   void OnFilterChanged(const QString& text);
 
  private:
@@ -41,6 +42,7 @@ class TasksWidget : public QWidget {
  QLineEdit* filter_ = nullptr;
  QPushButton* new_button_ = nullptr;
  QPushButton* done_button_ = nullptr;
+ QPushButton* delete_button_ = nullptr;
   std::vector<int> visible_indices_;
 
   void UpdateList();

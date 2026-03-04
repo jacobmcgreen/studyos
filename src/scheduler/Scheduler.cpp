@@ -77,6 +77,21 @@ std::vector<ScheduleItem> Scheduler::build_day_schedule(
   int slots = (end_min - start_min) / 30;
   std::vector<bool> available(slots, true);
 
+  // For today, mark slots before the current time as unavailable.
+  {
+    std::time_t now = std::time(nullptr);
+    std::tm now_tm = *std::localtime(&now);
+    char today_buf[11];
+    std::strftime(today_buf, sizeof(today_buf), "%Y-%m-%d", &now_tm);
+    if (date == today_buf) {
+      int current_minutes = now_tm.tm_hour * 60 + now_tm.tm_min;
+      int past_slots = std::min(slots, (current_minutes - start_min + 29) / 30);
+      for (int i = 0; i < past_slots; ++i) {
+        available[i] = false;
+      }
+    }
+  }
+
   for (const auto& block : busy_blocks) {
     if (block.date != date) continue;
     int bstart = to_minutes(block.start_time);

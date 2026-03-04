@@ -61,3 +61,14 @@ void TaskService::markDone(int id) {
     throw DbError("No task found with id " + std::to_string(id));
   }
 }
+
+void TaskService::deleteTask(int id) {
+  auto stmt = db_.prepare("DELETE FROM tasks WHERE id = ?");
+  sqlite3_bind_int(stmt.get(), 1, id);
+  if (sqlite3_step(stmt.get()) != SQLITE_DONE) {
+    throw DbError("Failed to delete task: " + std::string(sqlite3_errmsg(db_.handle())));
+  }
+  if (sqlite3_changes(db_.handle()) == 0) {
+    throw DbError("No task found with id " + std::to_string(id));
+  }
+}

@@ -26,6 +26,7 @@ class StatsWidget : public QWidget {
 
   QLabel* today_label_ = nullptr;
   QLabel* week_label_ = nullptr;
+  QLabel* today_tags_label_ = nullptr;
   QLabel* tags_label_ = nullptr;
   QTimer* tick_timer_ = nullptr;
 

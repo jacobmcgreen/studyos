@@ -3,8 +3,10 @@
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
+#include <QProgressBar>
 #include <QPushButton>
 #include <QShortcut>
+#include <QSpinBox>
 #include <QTimer>
 #include <QVBoxLayout>
 
@@ -34,18 +36,45 @@ QString FormatDuration(int seconds) {
 
 TimerWidget::TimerWidget(AppState& state, SessionService& session_service, QWidget* parent)
     : QWidget(parent), state_(state), session_service_(session_service) {
+  session_label_ = new QLabel("Session #0", this);
+  session_label_->setStyleSheet("color: #6c7086; font-size: 12px;");
+  session_label_->setAlignment(Qt::AlignCenter);
+
   mode_label_ = new QLabel(this);
-  mode_label_->setStyleSheet("font-weight: bold; font-size: 18px;");
+  mode_label_->setStyleSheet("font-weight: bold; font-size: 18px; color: #cba6f7;");
+  mode_label_->setAlignment(Qt::AlignCenter);
+
   time_label_ = new QLabel(this);
-  time_label_->setStyleSheet("font-size: 32px;");
+  time_label_->setStyleSheet("font-size: 52px; font-weight: bold; font-family: monospace;");
+  time_label_->setAlignment(Qt::AlignCenter);
+
+  progress_bar_ = new QProgressBar(this);
+  progress_bar_->setRange(0, 1000);
+  progress_bar_->setValue(1000);
+  progress_bar_->setTextVisible(false);
+  progress_bar_->setFixedHeight(6);
 
   tag_edit_ = new QLineEdit(this);
   tag_edit_->setPlaceholderText("focus tag");
+
+  focus_minutes_ = new QSpinBox(this);
+  focus_minutes_->setRange(1, 120);
+  focus_minutes_->setValue(25);
+  focus_minutes_->setSuffix(" min focus");
+
+  break_minutes_ = new QSpinBox(this);
+  break_minutes_->setRange(1, 60);
+  break_minutes_->setValue(5);
+  break_minutes_->setSuffix(" min break");
 
   start_button_ = new QPushButton("Start", this);
   pause_button_ = new QPushButton("Pause", this);
   stop_button_ = new QPushButton("Stop", this);
   reset_button_ = new QPushButton("Reset", this);
+
+  auto duration_row = new QHBoxLayout();
+  duration_row->addWidget(focus_minutes_);
+  duration_row->addWidget(break_minutes_);
 
   auto buttons = new QHBoxLayout();
   buttons->addWidget(start_button_);
@@ -54,11 +83,17 @@ TimerWidget::TimerWidget(AppState& state, SessionService& session_service, QWidg
   buttons->addWidget(reset_button_);
 
   auto layout = new QVBoxLayout();
+  layout->setSpacing(8);
+  layout->addStretch(1);
+  layout->addWidget(session_label_);
   layout->addWidget(mode_label_);
   layout->addWidget(time_label_);
+  layout->addWidget(progress_bar_);
+  layout->addSpacing(12);
   layout->addWidget(tag_edit_);
+  layout->addLayout(duration_row);
   layout->addLayout(buttons);
-  layout->addStretch(1);
+  layout->addStretch(2);
   setLayout(layout);
 
   tick_timer_ = new QTimer(this);
@@ -131,7 +166,8 @@ void TimerWidget::StartFocus() {
 
   state_.timer.last_tag = tag.toStdString();
   state_.timer.mode = AppState::TimerState::Mode::Focus;
-  state_.timer.remaining_seconds = 25 * 60;
+  state_.timer.remaining_seconds = focus_minutes_->value() * 60;
+  state_.timer.total_seconds = state_.timer.remaining_seconds;
   state_.timer.running = true;
   state_.timer.paused = false;
   UpdateUi();
@@ -162,13 +198,13 @@ void TimerWidget::StopSession() {
   state_.timer.running = false;
   state_.timer.paused = false;
   state_.timer.mode = AppState::TimerState::Mode::Idle;
-  state_.timer.remaining_seconds = 25 * 60;
+  state_.timer.remaining_seconds = focus_minutes_->value() * 60;
   UpdateUi();
   SetStatus("Session stopped.");
 }
 
 void TimerWidget::ResetTimer() {
-  state_.timer.remaining_seconds = 25 * 60;
+  state_.timer.remaining_seconds = focus_minutes_->value() * 60;
   state_.timer.mode = AppState::TimerState::Mode::Idle;
   state_.timer.running = false;
   state_.timer.paused = false;
@@ -177,9 +213,48 @@ void TimerWidget::ResetTimer() {
 }
 
 void TimerWidget::UpdateUi() {
-  mode_label_->setText(QString("Mode: %1").arg(ModeToString(state_.timer.mode)));
+  const auto mode = state_.timer.mode;
+  using Mode = AppState::TimerState::Mode;
+
+  mode_label_->setText(ModeToString(mode));
   time_label_->setText(FormatDuration(state_.timer.remaining_seconds));
   pause_button_->setText(state_.timer.paused ? "Resume" : "Pause");
+
+  // Session counter label.
+  if (state_.timer.session_count > 0) {
+    session_label_->setText(QString("Session #%1").arg(state_.timer.session_count));
+  }
+
+  // Progress bar: fraction of time remaining.
+  int total = state_.timer.total_seconds > 0 ? state_.timer.total_seconds : 1;
+  int val = static_cast<int>((static_cast<double>(state_.timer.remaining_seconds) / total) * 1000);
+  progress_bar_->setValue(val);
+
+  // Color progress bar and mode label by mode.
+  if (mode == Mode::Focus) {
+    mode_label_->setStyleSheet("font-weight: bold; font-size: 18px; color: #cba6f7;");
+    progress_bar_->setStyleSheet("QProgressBar::chunk { background: #cba6f7; border-radius: 3px; }");
+  } else if (mode == Mode::Break) {
+    mode_label_->setStyleSheet("font-weight: bold; font-size: 18px; color: #a6e3a1;");
+    progress_bar_->setStyleSheet("QProgressBar::chunk { background: #a6e3a1; border-radius: 3px; }");
+  } else {
+    mode_label_->setStyleSheet("font-weight: bold; font-size: 18px; color: #6c7086;");
+    progress_bar_->setStyleSheet("QProgressBar::chunk { background: #45475a; border-radius: 3px; }");
+  }
+
+  // Window title.
+  QString title;
+  if (mode == Mode::Focus) {
+    title = QString("%1 FOCUS [%2] — StudyOS")
+                .arg(FormatDuration(state_.timer.remaining_seconds))
+                .arg(QString::fromStdString(state_.timer.last_tag));
+  } else if (mode == Mode::Break) {
+    title = QString("%1 BREAK — StudyOS")
+                .arg(FormatDuration(state_.timer.remaining_seconds));
+  } else {
+    title = "StudyOS";
+  }
+  emit TitleChanged(title);
 }
 
 void TimerWidget::SwitchToBreak() {
@@ -192,7 +267,9 @@ void TimerWidget::SwitchToBreak() {
     state_.timer.session_active = false;
   }
   state_.timer.mode = AppState::TimerState::Mode::Break;
-  state_.timer.remaining_seconds = 5 * 60;
+  state_.timer.remaining_seconds = break_minutes_->value() * 60;
+  state_.timer.total_seconds = state_.timer.remaining_seconds;
+  state_.timer.session_count += 1;
   state_.timer.running = true;
   state_.timer.paused = false;
   UpdateUi();
@@ -201,7 +278,7 @@ void TimerWidget::SwitchToBreak() {
 
 void TimerWidget::SwitchToFocusIdle() {
   state_.timer.mode = AppState::TimerState::Mode::Idle;
-  state_.timer.remaining_seconds = 25 * 60;
+  state_.timer.remaining_seconds = focus_minutes_->value() * 60;
   state_.timer.running = false;
   state_.timer.paused = false;
   UpdateUi();

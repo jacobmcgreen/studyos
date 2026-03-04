@@ -33,11 +33,15 @@ StatsWidget::StatsWidget(AppState& state, SessionService& session_service, QWidg
     : QWidget(parent), state_(state), session_service_(session_service) {
   today_label_ = new QLabel(this);
   week_label_ = new QLabel(this);
+  today_tags_label_ = new QLabel(this);
+  today_tags_label_->setWordWrap(true);
   tags_label_ = new QLabel(this);
   tags_label_->setWordWrap(true);
 
   auto layout = new QVBoxLayout();
   layout->addWidget(today_label_);
+  layout->addWidget(new QLabel("Top tags (today)", this));
+  layout->addWidget(today_tags_label_);
   layout->addWidget(week_label_);
   layout->addWidget(new QLabel("Top tags (week)", this));
   layout->addWidget(tags_label_);
@@ -68,6 +72,7 @@ void StatsWidget::RecomputeStats() {
 
   state_.stats.today_seconds = session_service_.totalSecondsForRange(day_start, day_start + 24 * 60 * 60);
   state_.stats.week_seconds = session_service_.totalSecondsForRange(week_start, week_start + 7 * 24 * 60 * 60);
+  state_.stats.today_tags = session_service_.topTagsForRange(day_start, day_start + 24 * 60 * 60, 5);
   state_.stats.top_tags = session_service_.topTagsForRange(week_start, week_start + 7 * 24 * 60 * 60, 5);
 }
 
@@ -75,21 +80,24 @@ void StatsWidget::UpdateUi() {
   today_label_->setText(QString("Today: %1").arg(FormatDuration(state_.stats.today_seconds)));
   week_label_->setText(QString("Week: %1").arg(FormatDuration(state_.stats.week_seconds)));
 
-  QStringList lines;
-  long long max_seconds = 1;
-  for (const auto& entry : state_.stats.top_tags) {
-    max_seconds = std::max(max_seconds, entry.second);
-  }
+  auto make_tag_lines = [this](const std::vector<std::pair<std::string, long long>>& tags) -> QString {
+    if (tags.empty()) return "No sessions yet.";
+    long long max_seconds = 1;
+    for (const auto& entry : tags) {
+      max_seconds = std::max(max_seconds, entry.second);
+    }
+    QStringList lines;
+    for (const auto& entry : tags) {
+      lines << QString("%1 | %2 %3")
+                 .arg(QString::fromStdString(entry.first))
+                 .arg(FormatDuration(entry.second))
+                 .arg(BarsForSeconds(entry.second, max_seconds));
+    }
+    return lines.join("\n");
+  };
 
-  for (const auto& entry : state_.stats.top_tags) {
-    QString line = QString("%1 | %2 %3")
-                       .arg(QString::fromStdString(entry.first))
-                       .arg(FormatDuration(entry.second))
-                       .arg(BarsForSeconds(entry.second, max_seconds));
-    lines << line;
-  }
-
-  tags_label_->setText(lines.isEmpty() ? "No sessions yet." : lines.join("\n"));
+  today_tags_label_->setText(make_tag_lines(state_.stats.today_tags));
+  tags_label_->setText(make_tag_lines(state_.stats.top_tags));
 }
 
 QString StatsWidget::FormatDuration(long long seconds) {

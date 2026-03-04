@@ -1,5 +1,6 @@
 #include "gui/TasksWidget.hpp"
 
+#include <QColor>
 #include <QDialog>
 #include <QDialogButtonBox>
 #include <QFormLayout>
@@ -15,11 +16,38 @@
 #include <QVBoxLayout>
 
 #include <algorithm>
+#include <ctime>
 
 namespace {
 
 QString TaskStatusText(const Task& task) {
   return task.completed ? "Completed" : "Open";
+}
+
+// Returns today as "YYYY-MM-DD".
+QString TodayString() {
+  std::time_t now = std::time(nullptr);
+  std::tm tm = *std::localtime(&now);
+  char buf[11];
+  std::strftime(buf, sizeof(buf), "%Y-%m-%d", &tm);
+  return QString(buf);
+}
+
+// Returns days from today until due_date (negative = overdue).
+int DaysUntilDue(const std::string& due_date) {
+  if (due_date.size() != 10) return 9999;
+  std::time_t now = std::time(nullptr);
+  std::tm today_tm = *std::localtime(&now);
+  today_tm.tm_hour = 0; today_tm.tm_min = 0; today_tm.tm_sec = 0;
+  std::time_t today = std::mktime(&today_tm);
+
+  std::tm due_tm = {};
+  due_tm.tm_year = std::stoi(due_date.substr(0, 4)) - 1900;
+  due_tm.tm_mon  = std::stoi(due_date.substr(5, 2)) - 1;
+  due_tm.tm_mday = std::stoi(due_date.substr(8, 2));
+  std::time_t due = std::mktime(&due_tm);
+  if (due == -1) return 9999;
+  return static_cast<int>(std::difftime(due, today) / (60 * 60 * 24));
 }
 
 }  // namespace
@@ -35,6 +63,7 @@ TasksWidget::TasksWidget(AppState& state, TaskService& task_service, QWidget* pa
 
   new_button_ = new QPushButton("New", this);
   done_button_ = new QPushButton("Done", this);
+  delete_button_ = new QPushButton("Delete", this);
 
   auto list_layout = new QVBoxLayout();
   list_layout->addWidget(filter_);
@@ -45,6 +74,7 @@ TasksWidget::TasksWidget(AppState& state, TaskService& task_service, QWidget* pa
   right_layout->addStretch(1);
   right_layout->addWidget(new_button_);
   right_layout->addWidget(done_button_);
+  right_layout->addWidget(delete_button_);
 
   auto layout = new QHBoxLayout();
   layout->addLayout(list_layout, 2);
@@ -55,12 +85,15 @@ TasksWidget::TasksWidget(AppState& state, TaskService& task_service, QWidget* pa
   connect(search_shortcut, &QShortcut::activated, filter_, qOverload<>(&QWidget::setFocus));
   auto new_shortcut = new QShortcut(QKeySequence("n"), this);
   auto done_shortcut = new QShortcut(QKeySequence("d"), this);
+  auto delete_shortcut = new QShortcut(QKeySequence(Qt::Key_Delete), this);
   connect(new_shortcut, &QShortcut::activated, this, &TasksWidget::NewTask);
   connect(done_shortcut, &QShortcut::activated, this, &TasksWidget::MarkDone);
+  connect(delete_shortcut, &QShortcut::activated, this, &TasksWidget::DeleteTask);
 
   connect(list_, &QListWidget::currentRowChanged, this, &TasksWidget::OnSelectionChanged);
   connect(new_button_, &QPushButton::clicked, this, &TasksWidget::NewTask);
   connect(done_button_, &QPushButton::clicked, this, &TasksWidget::MarkDone);
+  connect(delete_button_, &QPushButton::clicked, this, &TasksWidget::DeleteTask);
   connect(filter_, &QLineEdit::textChanged, this, &TasksWidget::OnFilterChanged);
 
   RefreshTasks();
@@ -157,6 +190,24 @@ void TasksWidget::MarkDone() {
   }
 }
 
+void TasksWidget::DeleteTask() {
+  if (state_.tasks.selected_index < 0 || state_.tasks.selected_index >= list_->count()) {
+    SetStatus("Select a task.");
+    return;
+  }
+
+  int task_index = visible_indices_[static_cast<size_t>(state_.tasks.selected_index)];
+  const auto& task = state_.tasks.tasks[static_cast<size_t>(task_index)];
+
+  try {
+    task_service_.deleteTask(task.id);
+    SetStatus("Task deleted.");
+    RefreshTasks();
+  } catch (const std::exception& ex) {
+    SetStatus(ex.what());
+  }
+}
+
 void TasksWidget::OnFilterChanged(const QString& text) {
   state_.tasks.filter = text.toStdString();
   UpdateList();
@@ -171,7 +222,9 @@ void TasksWidget::UpdateList() {
   for (size_t i = 0; i < state_.tasks.tasks.size(); ++i) {
     const auto& task = state_.tasks.tasks[i];
     QString title = QString::fromStdString(task.title);
-    if (!filter.isEmpty() && !title.toLower().contains(filter)) {
+    QString tag = QString::fromStdString(task.tag);
+    if (!filter.isEmpty() && !title.toLower().contains(filter) &&
+        !tag.toLower().contains(filter)) {
       continue;
     }
 
@@ -182,7 +235,22 @@ void TasksWidget::UpdateList() {
     if (!task.tag.empty()) {
       label += QString(" (%1)").arg(QString::fromStdString(task.tag));
     }
-    list_->addItem(label);
+    auto* item = new QListWidgetItem(label);
+
+    if (task.completed) {
+      item->setForeground(QColor("#45475a"));
+    } else if (!task.due_date.empty()) {
+      int days = DaysUntilDue(task.due_date);
+      if (days < 0) {
+        item->setForeground(QColor("#f38ba8"));  // overdue: red
+      } else if (days <= 3) {
+        item->setForeground(QColor("#fab387"));  // due soon: orange
+      } else if (days <= 7) {
+        item->setForeground(QColor("#f9e2af"));  // this week: yellow
+      }
+    }
+
+    list_->addItem(item);
     visible_indices_.push_back(static_cast<int>(i));
   }
 

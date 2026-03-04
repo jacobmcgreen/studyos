@@ -5,6 +5,7 @@
 #include "gui/TimerWidget.hpp"
 #include "gui/ScheduleWidget.hpp"
 
+#include <QShortcut>
 #include <QStatusBar>
 #include <QTabWidget>
 #include <QVBoxLayout>
@@ -35,10 +36,20 @@ MainWindow::MainWindow(TaskService& task_service, SessionService& session_servic
   connect(tabs_, &QTabWidget::currentChanged, this, &MainWindow::OnTabChanged);
   connect(tasks_, &TasksWidget::StatusMessage, this, &MainWindow::SetStatus);
   connect(timer_, &TimerWidget::StatusMessage, this, &MainWindow::SetStatus);
+  connect(timer_, &TimerWidget::TitleChanged, this, &MainWindow::setWindowTitle);
   connect(schedule_, &ScheduleWidget::StatusMessage, this, &MainWindow::SetStatus);
 
+  auto tab1 = new QShortcut(QKeySequence("Ctrl+1"), this);
+  auto tab2 = new QShortcut(QKeySequence("Ctrl+2"), this);
+  auto tab3 = new QShortcut(QKeySequence("Ctrl+3"), this);
+  auto tab4 = new QShortcut(QKeySequence("Ctrl+4"), this);
+  connect(tab1, &QShortcut::activated, this, [this]() { tabs_->setCurrentIndex(0); });
+  connect(tab2, &QShortcut::activated, this, [this]() { tabs_->setCurrentIndex(1); });
+  connect(tab3, &QShortcut::activated, this, [this]() { tabs_->setCurrentIndex(2); });
+  connect(tab4, &QShortcut::activated, this, [this]() { tabs_->setCurrentIndex(3); });
+
   statusBar()->showMessage(
-      "Keys: Timer(s/p/x/r), Tasks(n/d, / filter, j/k), Schedule(generate/add), Tabs(ctrl+tab)");
+      "Keys: Timer(s/p/x/r), Tasks(n/d/Del, / filter, j/k), Tabs(Ctrl+1-4)");
 }
 
 void MainWindow::OnTabChanged(int index) {
